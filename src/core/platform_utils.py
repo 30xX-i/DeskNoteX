@@ -179,8 +179,9 @@ def make_tray_icon(size: int = 18):
     之前用 `QApplication.style().standardIcon(SP_ComputerIcon)` 是彩色
     Qt 内置图标,macOS 不会应用圆形遮罩,所以用户看到的是完整方形图片。
 
-    这里程序化绘制一个简单的便签本图形(纯黑 + alpha),
-    满足 template image 规则,macOS 会自动圆形遮罩。
+    关键:PyQt5 的 QIcon 在 macOS 上默认不会传 template 标记,即使我们用
+    QPixmap 画了纯黑 + alpha 的图形,macOS 仍然把它当彩色图片处理,不遮罩。
+    必须**直接用 NSImage + setTemplate_(True)**,然后转回 QPixmap 给 QIcon。
 
     Args:
         size: icon 像素尺寸,默认 18(macOS menu bar 标准尺寸)
@@ -191,9 +192,74 @@ def make_tray_icon(size: int = 18):
     参考:
       https://developer.apple.com/design/human-interface-guidelines/menus
       ("Use template images for menu bar icons" 一节)
+      https://developer.apple.com/documentation/appkit/nsimage/1520047-istemplateimage
+    """
+    if is_macos():
+        try:
+            return _make_tray_icon_nsimage(size)
+        except Exception as exc:
+            print(
+                f"[platform_utils] NSImage template icon 创建失败,"
+                f"回退到 QPixmap: {exc}",
+                file=sys.stderr,
+            )
+
+    return _make_tray_icon_qpixmap(size)
+
+
+def _make_tray_icon_nsimage(size: int):
+    """macOS 路径:用 NSImage + setTemplate_(True) 创建 template icon。
+
+    这是 macOS 上唯一可靠地让 menu bar 应用圆形遮罩的方式。
+    """
+    from AppKit import (
+        NSImage, NSColor, NSBezierPath,
+    )
+    from PyQt5.QtGui import QImage, QPixmap, QIcon
+
+    img = NSImage.alloc().initWithSize_((size, size))
+    # 必须在画图前标记 template,否则画完后 setTemplate_ 可能不生效
+    img.setTemplate_(True)
+
+    img.lockFocus()
+    try:
+        # 便签本外形(圆角矩形,纯黑)
+        NSColor.colorWithCalibratedWhite_alpha_(0.0, 1.0).set()
+        rect = ((2, 2), (size - 4, size - 4))
+        path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            rect, 2, 2,
+        )
+        path.fill()
+
+        # 3 条便签横线(白色 + 稍透明,在黑色便签上模拟文字)
+        NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.75).set()
+        for i in range(3):
+            y = 6 + i * 3
+            if y + 1 > size - 2:
+                break
+            NSBezierPath.fillRect_(((4, y), (size - 8, 1)))
+    finally:
+        img.unlockFocus()
+
+    # NSImage → TIFF data → QImage → QPixmap → QIcon
+    tiff_data = img.TIFFRepresentation()
+    qimg = QImage()
+    qimg.loadFromData(bytes(tiff_data), "TIFF")
+    pix = QPixmap.fromImage(qimg)
+    if pix.isNull():
+        raise RuntimeError("NSImage TIFF → QPixmap 转换失败")
+    return QIcon(pix)
+
+
+def _make_tray_icon_qpixmap(size: int):
+    """fallback:用 QPixmap + QPainter 画 template 风格 icon。
+
+    注意:仅靠 QPixmap 画纯黑 + alpha 不够,PyQt5 在 macOS 上不会
+    自动把 QIcon 标记为 template。这个 fallback 用于 pyobjc 缺失
+    的情况(此时 macOS 上仍可能显示为方形)。
     """
     from PyQt5.QtCore import Qt
-    from PyQt5.QtGui import QPixmap, QPainter, QColor, QIcon, QPainterPath
+    from PyQt5.QtGui import QPixmap, QPainter, QColor, QIcon
 
     pix = QPixmap(size, size)
     pix.fill(Qt.transparent)
@@ -204,7 +270,6 @@ def make_tray_icon(size: int = 18):
 
         margin = 2
 
-        # 便签本外形(圆角矩形,纯黑)
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(0, 0, 0, 255))
         p.drawRoundedRect(
@@ -213,8 +278,6 @@ def make_tray_icon(size: int = 18):
             2, 2,
         )
 
-        # 3 条便签横线(白色 + 半透明,在黑色背景上可见)
-        # 模板图中白色像素 alpha > 0 的会被视为"挖空",让 menu bar 透出
         p.setBrush(QColor(255, 255, 255, 220))
         line_top = 6
         line_spacing = max(2, (size - 2 * margin - 4) // 4)
