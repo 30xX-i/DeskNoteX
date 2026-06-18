@@ -102,6 +102,27 @@ def get_default_font_family() -> str:
     return "sans-serif"
 
 
+def activate_application() -> None:
+    """在 macOS 上 un-hide 并激活当前 application。
+
+    解决 QMainWindow.hide() 后整个 application 进入 hidden 状态、
+    再调 showNormal() 也无法恢复的问题。
+    仅 macOS 生效,其他平台 no-op。
+    pyobjc 缺失时静默忽略。
+    """
+    if not is_macos():
+        return
+    try:
+        from AppKit import NSApplication
+        NSApplication.sharedApplication().unhide_(None)
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+    except Exception as exc:
+        print(
+            f"[platform_utils] macOS activate_application 失败: {exc}",
+            file=sys.stderr,
+        )
+
+
 def show_notification(
     tray_icon,
     title: str,

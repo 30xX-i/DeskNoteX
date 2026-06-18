@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication
 from PyQt5.QtGui import QIcon
 
 from .config import ConfigManager, DatabaseManager
+from .platform_utils import activate_application
 
 
 class NotificationWorker(QThread):
@@ -73,6 +74,9 @@ class TrayManager:
         self.tray.show()
     
     def show_window(self):
+        # macOS 上 hide() 会让整个 application 进入 hidden 状态,
+        # 必须先 un-hide + activateIgnoringOtherApps 才能从托盘恢复。
+        activate_application()
         self.window.showNormal()
         self.window.raise_()
         self.window.activateWindow()
