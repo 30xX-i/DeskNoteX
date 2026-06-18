@@ -22,8 +22,7 @@ class MainWindow(QMainWindow):
         self.setAttribute(Qt.WA_TranslucentBackground)
 
         # 图标解析由 platform_utils 统一处理,资源缺失时回退到 Qt 标准图标
-        from PyQt5.QtWidgets import QApplication
-        from src.core.platform_utils import get_app_icon_path
+        from ..core.platform_utils import get_app_icon_path
 
         icon_path = get_app_icon_path()
         if icon_path:
@@ -520,7 +519,7 @@ class MainWindow(QMainWindow):
         dialog.setWindowTitle("新建分类")
         dialog.setLabelText("分类名称:")
         dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-        from src.core.platform_utils import get_app_icon_path
+        from ..core.platform_utils import get_app_icon_path
         dialog.setWindowIcon(QIcon(get_app_icon_path()) if get_app_icon_path() else QIcon())
         # 设置对话框样式
         dialog.setStyleSheet(f"""
@@ -640,7 +639,7 @@ class MainWindow(QMainWindow):
     def _show_notification(self, title, message, color):
         if not hasattr(self, 'tray_manager') or not self.tray_manager:
             return
-        from src.core.platform_utils import show_notification
+        from ..core.platform_utils import show_notification
         show_notification(
             self.tray_manager.tray,
             title,

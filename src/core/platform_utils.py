@@ -127,7 +127,7 @@ def show_notification(
         try:
             from win10toast import ToastNotifier
             toaster = ToastNotifier()
-            toaster.show_toast(title, message, duration=duration_ms // 1000, threaded=True)
+            toaster.show_toast(title, message, duration=max(1, duration_ms // 1000), threaded=True)
             return
         except Exception as exc:
             print(f"[platform_utils] win10toast 不可用,降级到 tray: {exc}", file=sys.stderr)
