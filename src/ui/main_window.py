@@ -192,10 +192,13 @@ class MainWindow(QMainWindow):
 
         title_widget = QWidget()
         title_widget.setLayout(title_bar)
+        # 背景必须 transparent,否则 layout-managed child widget 会从 (0,0) 起点画
+        # 不透明矩形,遮住 container 的 border-radius 16px 圆角(Qt 渲染层不会
+        # 自动让 border-radius 裁切 child widget 的 background 绘制)。
         title_widget.setStyleSheet(f"""
             QWidget {{
                 border-bottom: 1px solid {self.theme['border']};
-                background: {self.theme['window']};
+                background: transparent;
             }}
         """)
         title_widget.mousePressEvent = self._title_mouse_press

@@ -9,7 +9,10 @@ def get_stylesheet(theme, font_family, font_size):
         font-family: "{font_family}";
         font-size: {fs}px;
         color: {t['text']};
-        background: {t['window']};
+        /* 全局 background 改为 transparent,避免级联到所有 descendant widget 时
+           把 container 的 border-radius 圆角遮盖。container 自身的 background
+           由 QWidget#mainContainer 规则显式设置,不受影响。 */
+        background: transparent;
         outline: none;
         border: none;
     }}
