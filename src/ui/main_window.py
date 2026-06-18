@@ -638,14 +638,16 @@ class MainWindow(QMainWindow):
         self.theme_changed.emit()
     
     def _show_notification(self, title, message, color):
-        try:
-            from win10toast import ToastNotifier
-            toaster = ToastNotifier()
-            toaster.show_toast(title, message, duration=6, threaded=True)
-        except ImportError:
-            # Fallback: simple tooltip/tray notification
-            if hasattr(self, 'tray_manager') and self.tray_manager:
-                self.tray_manager.tray.showMessage(title, message, QSystemTrayIcon.Information, 5000)
+        if not hasattr(self, 'tray_manager') or not self.tray_manager:
+            return
+        from src.core.platform_utils import show_notification
+        show_notification(
+            self.tray_manager.tray,
+            title,
+            message,
+            color,
+            duration_ms=5000,
+        )
     
     def _minimize_to_tray(self):
         self.hide()
