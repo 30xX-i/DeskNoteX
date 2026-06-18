@@ -729,4 +729,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'db') and self.db:
             self.db.close()
             self.db = None
+        # 关闭主窗口时**直接退出整个应用**。
+        # main.py 设了 setQuitOnLastWindowClosed(False) 让托盘常驻,但用户期望
+        # 是点 x 就完全退出,所以这里主动调 app.quit() 绕开这个 flag。
+        # 不依赖 closeEvent 是否被 Qt 真的派发(系统关窗、close()、setQuitOnLastWindowClosed
+        # 等场景下都走这里),所以 closeEvent 始终=退出应用。
+        QApplication.instance().quit()
         event.accept()
