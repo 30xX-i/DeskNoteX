@@ -21,16 +21,15 @@ class MainWindow(QMainWindow):
         super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-        # 加载 .ico 图标
-        import os
-        import sys
-        if getattr(sys, 'frozen', False):
-            icon_path = os.path.join(sys._MEIPASS, "assets", "icon.ico")
-        else:
-            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            icon_path = os.path.join(base_path, "assets", "icon.ico")
+        # 图标解析由 platform_utils 统一处理,资源缺失时回退到 Qt 标准图标
+        from PyQt5.QtWidgets import QApplication
+        from src.core.platform_utils import get_app_icon_path
 
-        self.setWindowIcon(QIcon(icon_path))
+        icon_path = get_app_icon_path()
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            self.setWindowIcon(QApplication.style().standardIcon(QApplication.style().SP_ComputerIcon))
 
         self.config = ConfigManager()
         self.db = DatabaseManager()
@@ -521,7 +520,8 @@ class MainWindow(QMainWindow):
         dialog.setWindowTitle("新建分类")
         dialog.setLabelText("分类名称:")
         dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-        dialog.setWindowIcon(QIcon("assets/icon.png"))
+        from src.core.platform_utils import get_app_icon_path
+        dialog.setWindowIcon(QIcon(get_app_icon_path()) if get_app_icon_path() else QIcon())
         # 设置对话框样式
         dialog.setStyleSheet(f"""
                QInputDialog {{
