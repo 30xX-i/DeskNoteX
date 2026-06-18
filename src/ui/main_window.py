@@ -21,6 +21,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        # macOS 上要真正实现逐像素透明,除了 WA_TranslucentBackground 还必须
+        # 加 WA_NoSystemBackground,否则 AppKit 仍会画一层系统背景,
+        # 圆角外的区域被填充成不透明色,看不到 border-radius 效果。
+        self.setAttribute(Qt.WA_NoSystemBackground)
 
         # 图标解析由 platform_utils 统一处理,资源缺失时回退到 Qt 标准图标
         from ..core.platform_utils import get_app_icon_path
@@ -337,6 +341,10 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(body_widget, 1)
         
         self.setCentralWidget(self.container)
+        # 防御性补强:显式禁止 centralWidget 自身填充背景,避免某些 Qt 版本
+        # 下 QMainWindow 默认画一块不透明的 viewport 把 container 圆角外的区域盖掉。
+        self.container.setAutoFillBackground(False)
+        self.centralWidget().setAutoFillBackground(False)
         self.setMinimumSize(320, 480)
         self.setMaximumSize(600, 900)
 
@@ -705,7 +713,17 @@ class MainWindow(QMainWindow):
         self.config.set("window_pos", [self.x(), self.y()])
     
     def closeEvent(self, event):
-        self.notify_worker.stop()
-        self.tuck_manager.stop()
-        self.db.close()
+        # 先停 refresh_timer,避免它在 db close 后触发 _load_tasks
+        if hasattr(self, 'refresh_timer') and self.refresh_timer:
+            self.refresh_timer.stop()
+        # 停 tuck_manager
+        if hasattr(self, 'tuck_manager') and self.tuck_manager:
+            self.tuck_manager.stop()
+        # 停 notify_worker 并无限等待,确保 run() 在主线程 close db 前完成收尾
+        if hasattr(self, 'notify_worker') and self.notify_worker:
+            self.notify_worker.stop()  # 内部 wait() 无超时
+        # 主线程 db 在主线程 close
+        if hasattr(self, 'db') and self.db:
+            self.db.close()
+            self.db = None
         event.accept()

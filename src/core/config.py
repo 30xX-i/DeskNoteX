@@ -123,7 +123,7 @@ class ConfigManager:
 class DatabaseManager:
     def __init__(self):
         os.makedirs(APP_DIR, exist_ok=True)
-        self.conn = sqlite3.connect(DB_PATH)
+        self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._init_tables()
     

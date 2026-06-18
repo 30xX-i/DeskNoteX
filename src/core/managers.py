@@ -18,8 +18,6 @@ class NotificationWorker(QThread):
         self.running = True
 
     def run(self):
-        from time import sleep
-
         # 在后台线程内独立创建数据库连接
         self.db = DatabaseManager()
 
@@ -40,17 +38,26 @@ class NotificationWorker(QThread):
                         self.db.spawn_repeat_task(t['id'])
             except Exception as e:
                 print(f"NotificationWorker error: {e}")
-            sleep(30)  # Check every 30 seconds
+
+            # 用可中断的 100ms 循环等待 30 秒,期间任何 stop() 都会立即响应
+            for _ in range(300):
+                if not self.running:
+                    break
+                self.msleep(100)
 
         # 在创建连接的同一线程里 close,避免 SQLite 跨线程访问错误。
         if self.db:
-            self.db.close()
+            try:
+                self.db.close()
+            except Exception as e:
+                print(f"NotificationWorker close error: {e}")
+            self.db = None
 
     def stop(self):
-        # 仅设置标志并等待线程退出;db.close() 由 run() 自己在子线程里调用,
+        # 仅设置标志并无限等待线程退出;db.close() 由 run() 自己在子线程里调用,
         # 保证 SQLite 连接只在创建它的线程里被使用。
         self.running = False
-        self.wait(1000)
+        self.wait()  # 无超时等待,确保 run() 收尾 close db 后再返回
 
 class TrayManager:
     def __init__(self, app, window, config):
@@ -101,6 +108,9 @@ class TrayManager:
     
     def quit_app(self):
         self.tray.hide()
+        # 让 MainWindow 走 closeEvent,统一收尾 refresh_timer + worker + db
+        if self.window and self.window.isVisible():
+            self.window.close()
         self.app.quit()
 
 class EdgeTuckManager:
