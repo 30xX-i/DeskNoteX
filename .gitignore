@@ -1,0 +1,45 @@
+# Windows、Mac 系统自动生成垃圾文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.lnk
+
+# PyCharm 编辑器本地配置，别人不需要
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Python 运行缓存（你刚才误提交的 __pycache__ 就在这一类）
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Python 虚拟环境文件夹
+venv/
+env/
+
+# PyInstaller 打包生成的文件夹与文件（dist、build、exe、spec都不上传）
+build/
+dist/
+*.spec
+*.exe
+
+# 你之前指定不需要上传的文件
+main.py
+build.py
+README.md
+
+# 日志、临时文件
+*.log
+logs/
+tmp/
+*.tmp
+
+# 隐私敏感文件（密钥、数据库）
+.env
+*.key
+*.pem
+*.db
+*.sqlite
