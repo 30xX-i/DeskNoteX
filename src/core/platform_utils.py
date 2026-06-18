@@ -103,19 +103,28 @@ def get_default_font_family() -> str:
 
 
 def activate_application() -> None:
-    """在 macOS 上 un-hide 并激活当前 application。
+    """在 macOS 上 un-hide 并激活当前 application 及所有窗口。
 
     解决 QMainWindow.hide() 后整个 application 进入 hidden 状态、
-    再调 showNormal() 也无法恢复的问题。
-    仅 macOS 生效,其他平台 no-op。
-    pyobjc 缺失时静默忽略。
+    再调 showNormal()/show() 也无法恢复显示的问题:
+      1. NSApp.unhide_ 解除 application hidden
+      2. 遍历所有 NSWindow 主动 makeKeyAndOrderFront_,确保窗口重新到最前
+      3. activateIgnoringOtherApps_ 抢占焦点
+
+    仅 macOS 生效,其他平台 no-op。pyobjc 缺失时静默忽略。
     """
     if not is_macos():
         return
     try:
         from AppKit import NSApplication
-        NSApplication.sharedApplication().unhide_(None)
-        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        ns_app = NSApplication.sharedApplication()
+        ns_app.unhide_(None)
+        for window in ns_app.windows():
+            try:
+                window.makeKeyAndOrderFront_(None)
+            except Exception:
+                pass
+        ns_app.activateIgnoringOtherApps_(True)
     except Exception as exc:
         print(
             f"[platform_utils] macOS activate_application 失败: {exc}",

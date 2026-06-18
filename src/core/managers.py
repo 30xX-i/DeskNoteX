@@ -75,9 +75,13 @@ class TrayManager:
     
     def show_window(self):
         # macOS 上 hide() 会让整个 application 进入 hidden 状态,
-        # 必须先 un-hide + activateIgnoringOtherApps 才能从托盘恢复。
+        # 仅 unhide_ + activateIgnoringOtherApps 还不够,必须让 NSWindow
+        # 主动 makeKeyAndOrderFront_ 才能把窗口重新拉到屏幕。
         activate_application()
-        self.window.showNormal()
+        if self.window.isMinimized():
+            self.window.showNormal()
+        else:
+            self.window.show()
         self.window.raise_()
         self.window.activateWindow()
     
