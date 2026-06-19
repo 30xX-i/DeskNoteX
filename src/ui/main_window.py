@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QScrollArea, QFrame, QSplitter,
     QSizePolicy, QApplication, QMessageBox, QInputDialog, QMenu,
     QSystemTrayIcon, QAction
@@ -13,6 +13,7 @@ from .styles import get_stylesheet, StyleHelper
 from .task_card import TaskCard, CategoryItem
 from .dialogs import TaskDialog
 from .settings_dialogs import SettingsDialog, StatsDialog
+from .resize_handle import ResizeHandle
 
 class MainWindow(QMainWindow):
     theme_changed = pyqtSignal()
@@ -20,17 +21,19 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        # macOS 上要真正实现逐像素透明,除了 WA_TranslucentBackground 还必须
+        # 加 WA_NoSystemBackground,否则 AppKit 仍会画一层系统背景,
+        # 圆角外的区域被填充成不透明色,看不到 border-radius 效果。
+        self.setAttribute(Qt.WA_NoSystemBackground)
 
-        # 加载 .ico 图标
-        import os
-        import sys
-        if getattr(sys, 'frozen', False):
-            icon_path = os.path.join(sys._MEIPASS, "assets", "icon.ico")
+        # 图标解析由 platform_utils 统一处理,资源缺失时回退到 Qt 标准图标
+        from ..core.platform_utils import get_app_icon_path
+
+        icon_path = get_app_icon_path()
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
         else:
-            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            icon_path = os.path.join(base_path, "assets", "icon.ico")
-
-        self.setWindowIcon(QIcon(icon_path))
+            self.setWindowIcon(QApplication.style().standardIcon(QApplication.style().SP_ComputerIcon))
 
         self.config = ConfigManager()
         self.db = DatabaseManager()
@@ -63,19 +66,22 @@ class MainWindow(QMainWindow):
         self.refresh_timer.start(30000)  # Refresh every 30s
     
     def _setup_ui(self):
-        self.setStyleSheet(get_stylesheet(self.theme, self.font_family, self.font_size))
-        
-        # Central container with rounded corners
+        # 把全局 stylesheet 应用到 self.container 而不是 self(MainWindow):
+        # styles.py 里有 "QWidget { background: window }",若设到 MainWindow 上
+        # 会覆盖 WA_TranslucentBackground,导致 MainWindow 不透明,
+        # 圆角之外的区域跟 container 同色,看起来"圆角没了"。
+        # 应用到 container 上后,MainWindow 保持透明,圆角清晰可见。
         self.container = QWidget(self)
         self.container.setObjectName("mainContainer")
-        self.container.setStyleSheet(f"""
+        self.container.setStyleSheet(get_stylesheet(self.theme, self.font_family, self.font_size))
+        self.container.setStyleSheet(self.container.styleSheet() + f"""
             QWidget#mainContainer {{
                 background: {self.theme['window']};
                 border-radius: 16px;
                 border: 1px solid {self.theme['border']};
             }}
         """)
-        
+
         main_layout = QVBoxLayout(self.container)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -186,10 +192,13 @@ class MainWindow(QMainWindow):
 
         title_widget = QWidget()
         title_widget.setLayout(title_bar)
+        # 背景必须 transparent,否则 layout-managed child widget 会从 (0,0) 起点画
+        # 不透明矩形,遮住 container 的 border-radius 16px 圆角(Qt 渲染层不会
+        # 自动让 border-radius 裁切 child widget 的 background 绘制)。
         title_widget.setStyleSheet(f"""
             QWidget {{
                 border-bottom: 1px solid {self.theme['border']};
-                background: {self.theme['window']};
+                background: transparent;
             }}
         """)
         title_widget.mousePressEvent = self._title_mouse_press
@@ -335,8 +344,20 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(body_widget, 1)
         
         self.setCentralWidget(self.container)
+        # 防御性补强:显式禁止 centralWidget 自身填充背景,避免某些 Qt 版本
+        # 下 QMainWindow 默认画一块不透明的 viewport 把 container 圆角外的区域盖掉。
+        self.container.setAutoFillBackground(False)
+        self.centralWidget().setAutoFillBackground(False)
         self.setMinimumSize(320, 480)
         self.setMaximumSize(600, 900)
+
+        # 右下角 resize grip(FramelessWindowHint 没有系统边框,需要手动加)
+        # 自绘斜线 grip,避免 QSizeGrip 在某些 Qt 版本下破坏父 widget 的圆角样式。
+        self.size_grip = ResizeHandle(self)
+        self.size_grip.move(
+            self.width() - self.size_grip.width(),
+            self.height() - self.size_grip.height(),
+        )
     
     def _make_filter_btn(self, text, filter_type):
         btn = QPushButton(text)
@@ -364,8 +385,10 @@ class MainWindow(QMainWindow):
         return btn
     
     def _apply_theme(self):
-        self.setStyleSheet(get_stylesheet(self.theme, self.font_family, self.font_size))
-        self.container.setStyleSheet(f"""
+        # 同 _setup_ui:stylesheet 应用到 container 而非 MainWindow,
+        # 保留 WA_TranslucentBackground 让圆角之外的区域保持透明。
+        self.container.setStyleSheet(get_stylesheet(self.theme, self.font_family, self.font_size))
+        self.container.setStyleSheet(self.container.styleSheet() + f"""
             QWidget#mainContainer {{
                 background: {self.theme['window']};
                 border-radius: 16px;
@@ -521,7 +544,8 @@ class MainWindow(QMainWindow):
         dialog.setWindowTitle("新建分类")
         dialog.setLabelText("分类名称:")
         dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-        dialog.setWindowIcon(QIcon("assets/icon.png"))
+        from ..core.platform_utils import get_app_icon_path
+        dialog.setWindowIcon(QIcon(get_app_icon_path()) if get_app_icon_path() else QIcon())
         # 设置对话框样式
         dialog.setStyleSheet(f"""
                QInputDialog {{
@@ -638,14 +662,16 @@ class MainWindow(QMainWindow):
         self.theme_changed.emit()
     
     def _show_notification(self, title, message, color):
-        try:
-            from win10toast import ToastNotifier
-            toaster = ToastNotifier()
-            toaster.show_toast(title, message, duration=6, threaded=True)
-        except ImportError:
-            # Fallback: simple tooltip/tray notification
-            if hasattr(self, 'tray_manager') and self.tray_manager:
-                self.tray_manager.tray.showMessage(title, message, QSystemTrayIcon.Information, 5000)
+        if not hasattr(self, 'tray_manager') or not self.tray_manager:
+            return
+        from ..core.platform_utils import show_notification
+        show_notification(
+            self.tray_manager.tray,
+            title,
+            message,
+            color,
+            duration_ms=5000,
+        )
     
     def _minimize_to_tray(self):
         self.hide()
@@ -677,6 +703,12 @@ class MainWindow(QMainWindow):
     
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        # 把 size_grip 始终放在右下角(随窗口 resize 重新定位)
+        if hasattr(self, "size_grip"):
+            self.size_grip.move(
+                self.width() - self.size_grip.width(),
+                self.height() - self.size_grip.height(),
+            )
         self.config.set("window_size", [self.width(), self.height()])
     
     def moveEvent(self, event):
@@ -684,7 +716,23 @@ class MainWindow(QMainWindow):
         self.config.set("window_pos", [self.x(), self.y()])
     
     def closeEvent(self, event):
-        self.notify_worker.stop()
-        self.tuck_manager.stop()
-        self.db.close()
+        # 先停 refresh_timer,避免它在 db close 后触发 _load_tasks
+        if hasattr(self, 'refresh_timer') and self.refresh_timer:
+            self.refresh_timer.stop()
+        # 停 tuck_manager
+        if hasattr(self, 'tuck_manager') and self.tuck_manager:
+            self.tuck_manager.stop()
+        # 停 notify_worker 并无限等待,确保 run() 在主线程 close db 前完成收尾
+        if hasattr(self, 'notify_worker') and self.notify_worker:
+            self.notify_worker.stop()  # 内部 wait() 无超时
+        # 主线程 db 在主线程 close
+        if hasattr(self, 'db') and self.db:
+            self.db.close()
+            self.db = None
+        # 关闭主窗口时**直接退出整个应用**。
+        # main.py 设了 setQuitOnLastWindowClosed(False) 让托盘常驻,但用户期望
+        # 是点 x 就完全退出,所以这里主动调 app.quit() 绕开这个 flag。
+        # 不依赖 closeEvent 是否被 Qt 真的派发(系统关窗、close()、setQuitOnLastWindowClosed
+        # 等场景下都走这里),所以 closeEvent 始终=退出应用。
+        QApplication.instance().quit()
         event.accept()

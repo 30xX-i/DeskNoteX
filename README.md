@@ -1,6 +1,6 @@
 # 📝 DeskNoteX - 桌面便签任务管理
 
-一个简洁美观的桌面便签应用，基于 Python + PyQt5 构建，支持任务管理、分类标签、优先级设置和提醒通知。
+一个简洁美观的桌面便签应用，基于 Python + PyQt5 构建，支持任务管理、分类标签、优先级设置和提醒通知。支持 macOS / Windows。
 
 ## ✨ 核心功能
 
@@ -24,3 +24,11 @@
 cd DeskNoteX
 pip install -r requirements.txt
 python main.py
+```
+
+### 方式二：打包成单文件 exe（Windows）
+
+```bash
+python build.py
+# 输出在 dist/
+```

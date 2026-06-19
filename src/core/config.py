@@ -2,6 +2,7 @@ import os
 import json
 import sqlite3
 from datetime import datetime, timedelta
+from .platform_utils import is_macos, get_default_font_family
 
 APP_NAME = "DeskNoteX"
 APP_VERSION = "1.0.0"
@@ -80,10 +81,20 @@ class ConfigManager:
                     # Merge with defaults for any missing keys
                     merged = DEFAULT_CONFIG.copy()
                     merged.update(loaded)
-                    return merged
+                    return self._apply_platform_defaults(merged)
             except Exception:
-                return DEFAULT_CONFIG.copy()
-        return DEFAULT_CONFIG.copy()
+                return self._apply_platform_defaults(DEFAULT_CONFIG.copy())
+        return self._apply_platform_defaults(DEFAULT_CONFIG.copy())
+
+    def _apply_platform_defaults(self, config):
+        """根据平台覆盖默认中文字体。
+
+        规则:仅当用户从未显式设置过 font_family(或等于原默认 "Microsoft YaHei")
+        且当前为 macOS 时,替换为 PingFang SC。用户已自定义的值不动。
+        """
+        if is_macos() and config.get("font_family") in ("Microsoft YaHei", None, ""):
+            config["font_family"] = get_default_font_family()
+        return config
     
     def save(self):
         with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
@@ -112,7 +123,7 @@ class ConfigManager:
 class DatabaseManager:
     def __init__(self):
         os.makedirs(APP_DIR, exist_ok=True)
-        self.conn = sqlite3.connect(DB_PATH)
+        self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._init_tables()
     
