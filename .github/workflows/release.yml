@@ -1,0 +1,100 @@
+name: Build & Release
+
+# 触发:推送形如 v1.2.3 的 tag 时自动构建并发布 release。
+# 日常代码 push 不构建,避免浪费 CI 配额。
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 写权限:softprops/action-gh-release 创建 release 需要 contents: write
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # 任一平台失败不阻塞另一个,便于分开诊断
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: DeskNoteX-windows
+          - os: macos-latest
+            artifact_name: DeskNoteX-macos
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        # build.py 已根据 sys_platform 自动 exclude 大量 Qt 子模块
+        # (见 requirements.txt 里的 pyobjc-framework-Cocoa 仅 darwin 装)。
+        run: python build.py
+
+      - name: Prepare Windows artifact name
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          mv dist/DeskNoteX.exe "DeskNoteX-${{ github.ref_name }}-windows.exe"
+          ls -lh "DeskNoteX-${{ github.ref_name }}-windows.exe"
+
+      - name: Prepare macOS artifact (tar.gz)
+        if: matrix.os == 'macos-latest'
+        # 打包成 tar.gz 而不是直接上传 Mach-O:GitHub 上传会丢失可执行位
+        # (chmod +x),且 macOS tar 默认会写 _COPYFILE 等扩展属性污染压缩包。
+        run: |
+          chmod +x dist/DeskNoteX
+          COPYFILE_DISABLE=1 tar -czf "DeskNoteX-${{ github.ref_name }}-macos.tar.gz" -C dist DeskNoteX
+          ls -lh "DeskNoteX-${{ github.ref_name }}-macos.tar.gz"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            DeskNoteX-${{ github.ref_name }}-windows.exe
+            DeskNoteX-${{ github.ref_name }}-macos.tar.gz
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: find artifacts -maxdepth 2 -type f -exec ls -lh {} \;
+
+      - name: Create release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          # body 留空 → 由 generate_release_notes 自动从 commits 生成。
+          # 如果 macOS 是 unsigned,首次运行用户需在系统设置里允许,见 release notes 提示。
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/DeskNoteX-windows/DeskNoteX-${{ github.ref_name }}-windows.exe
+            artifacts/DeskNoteX-macos/DeskNoteX-${{ github.ref_name }}-macos.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
